@@ -33,27 +33,13 @@ jobs:
       - name: Accept Android SDK licenses
         shell: bash
         run: |
-          set -e
-          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          set +o pipefail
+          yes | sdkmanager --licenses || true
 
-          if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          else
-            SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
-              -type f -name sdkmanager | head -n 1)
-          fi
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager not found."
-            exit 1
-          fi
-
-          echo "Using: $SDKMANAGER"
-          yes | "$SDKMANAGER" --licenses
-
-          "$SDKMANAGER" --install \
-            "platform-tools" \
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          sdkmanager "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0"
 
@@ -74,7 +60,6 @@ jobs:
               exit 1
             fi
 
-            echo "Extracting $ARCHIVE"
             unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/diwan-project"
 
             PACKAGE_FILE=$(find "$RUNNER_TEMP/diwan-project" \
@@ -89,7 +74,6 @@ jobs:
           fi
 
           echo "PROJECT_DIR=$PROJECT_ROOT" >> "$GITHUB_ENV"
-          echo "Project: $PROJECT_ROOT"
 
       - name: Verify project files
         working-directory: ${{ env.PROJECT_DIR }}
@@ -97,7 +81,6 @@ jobs:
           test -f package.json
           test -f app.json
           test -f App.tsx
-          echo "Project files verified."
 
       - name: Install dependencies
         working-directory: ${{ env.PROJECT_DIR }}
