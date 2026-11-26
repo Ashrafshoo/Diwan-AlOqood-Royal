@@ -1,5 +1,5 @@
 
-name: Build Android APK
+name: Build Diwan Android APK
 
 on:
   workflow_dispatch:
@@ -30,16 +30,34 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          accept-android-sdk-licenses: true
-          packages: |
-            platform-tools
-            platforms;android-36
-            build-tools;36.0.0
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: |
+          set -e
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
 
-      - name: Locate project files
+          if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          else
+            SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
+              -type f -name sdkmanager | head -n 1)
+          fi
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager not found."
+            exit 1
+          fi
+
+          echo "Using: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses
+
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+      - name: Locate project
         shell: bash
         run: |
           if [ -f "$GITHUB_WORKSPACE/package.json" ]; then
@@ -48,21 +66,22 @@ jobs:
             mkdir -p "$RUNNER_TEMP/diwan-project"
 
             ARCHIVE=$(find "$GITHUB_WORKSPACE" \
-              -maxdepth 3 -type f -name "*.zip" | head -n 1)
+              -maxdepth 4 -type f -iname "*.zip" \
+              ! -path "*/.git/*" | head -n 1)
 
             if [ -z "$ARCHIVE" ]; then
-              echo "ERROR: No package.json or project ZIP found."
+              echo "ERROR: Project ZIP not found."
               exit 1
             fi
 
-            echo "Extracting: $ARCHIVE"
+            echo "Extracting $ARCHIVE"
             unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/diwan-project"
 
             PACKAGE_FILE=$(find "$RUNNER_TEMP/diwan-project" \
               -type f -name package.json | head -n 1)
 
             if [ -z "$PACKAGE_FILE" ]; then
-              echo "ERROR: package.json not found in ZIP."
+              echo "ERROR: package.json not found."
               exit 1
             fi
 
@@ -70,20 +89,21 @@ jobs:
           fi
 
           echo "PROJECT_DIR=$PROJECT_ROOT" >> "$GITHUB_ENV"
-          echo "Project directory: $PROJECT_ROOT"
+          echo "Project: $PROJECT_ROOT"
 
-      - name: Check project files
+      - name: Verify project files
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           test -f package.json
           test -f app.json
-          echo "Project files found."
+          test -f App.tsx
+          echo "Project files verified."
 
       - name: Install dependencies
         working-directory: ${{ env.PROJECT_DIR }}
         run: npm install --no-audit --no-fund
 
-      - name: Check TypeScript
+      - name: TypeScript check
         working-directory: ${{ env.PROJECT_DIR }}
         run: npm run typecheck
 
@@ -91,7 +111,7 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: npx expo prebuild --platform android --non-interactive
 
-      - name: Build Android APK
+      - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           cd android
