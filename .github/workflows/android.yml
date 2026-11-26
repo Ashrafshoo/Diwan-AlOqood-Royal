@@ -32,32 +32,14 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+          packages: |
+            platform-tools
 
-      - name: Accept Android SDK licenses
-        shell: bash
-        run: |
-          set +e
-          set +o pipefail
-
-          yes 2>/dev/null | sdkmanager --licenses
-          STATUS=( "${PIPESTATUS[@]}" )
-
-          SDK_STATUS="${STATUS[1]}"
-
-          set -e
-          set -o pipefail
-
-          if [ "$SDK_STATUS" -ne 0 ]; then
-            echo "ERROR: Android SDK license acceptance failed."
-            exit "$SDK_STATUS"
-          fi
-
-          echo "Android SDK licenses accepted."
-
-      - name: Install Android SDK packages
+      - name: Install Android platform and build tools
         run: |
           sdkmanager --install \
-            "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0"
 
@@ -78,7 +60,7 @@ jobs:
               exit 1
             fi
 
-            echo "Extracting project archive..."
+            echo "Extracting: $ARCHIVE"
             unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/diwan-project"
 
             PACKAGE_FILE=$(find "$RUNNER_TEMP/diwan-project" \
