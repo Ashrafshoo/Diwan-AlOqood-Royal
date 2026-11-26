@@ -7,13 +7,16 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    name: Build Employee Android App
+    name: Build Diwan Android APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -29,34 +32,83 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+          packages: |
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
 
-      - name: Accept SDK licenses
-        run: yes | sdkmanager --licenses || true
-
-      - name: Install Android SDK packages
+      - name: Locate project files
+        shell: bash
         run: |
-          sdkmanager "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
+          if [ -f "$GITHUB_WORKSPACE/package.json" ]; then
+            PROJECT_ROOT="$GITHUB_WORKSPACE"
+          else
+            mkdir -p "$RUNNER_TEMP/diwan-project"
+
+            ARCHIVE=$(find "$GITHUB_WORKSPACE" \
+              -maxdepth 3 -type f -name "*.zip" | head -n 1)
+
+            if [ -z "$ARCHIVE" ]; then
+              echo "ERROR: No package.json or project ZIP found."
+              exit 1
+            fi
+
+            echo "Extracting: $ARCHIVE"
+            unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/diwan-project"
+
+            PACKAGE_FILE=$(find "$RUNNER_TEMP/diwan-project" \
+              -type f -name package.json | head -n 1)
+
+            if [ -z "$PACKAGE_FILE" ]; then
+              echo "ERROR: package.json not found in ZIP."
+              exit 1
+            fi
+
+            PROJECT_ROOT=$(dirname "$PACKAGE_FILE")
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_ROOT" >> "$GITHUB_ENV"
+          echo "Project directory: $PROJECT_ROOT"
+
+      - name: Check project files
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          test -f package.json
+          test -f app.json
+          echo "Project files found."
 
       - name: Install dependencies
+        working-directory: ${{ env.PROJECT_DIR }}
         run: npm install --no-audit --no-fund
 
       - name: Check TypeScript
+        working-directory: ${{ env.PROJECT_DIR }}
         run: npm run typecheck
 
       - name: Generate Android project
+        working-directory: ${{ env.PROJECT_DIR }}
         run: npx expo prebuild --platform android --non-interactive
 
-      - name: Build APK
+      - name: Build Android APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
+      - name: Verify APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          ls -lh "$APK"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: diwan-android-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Diwan-Android-APK
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
