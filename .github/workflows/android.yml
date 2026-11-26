@@ -30,20 +30,38 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Accept Android SDK licenses
         shell: bash
         run: |
+          set +e
           set +o pipefail
-          yes | sdkmanager --licenses || true
+
+          yes 2>/dev/null | sdkmanager --licenses
+          STATUS=( "${PIPESTATUS[@]}" )
+
+          SDK_STATUS="${STATUS[1]}"
+
+          set -e
+          set -o pipefail
+
+          if [ "$SDK_STATUS" -ne 0 ]; then
+            echo "ERROR: Android SDK license acceptance failed."
+            exit "$SDK_STATUS"
+          fi
+
+          echo "Android SDK licenses accepted."
 
       - name: Install Android SDK packages
-        shell: bash
         run: |
-          sdkmanager "platform-tools" \
+          sdkmanager --install \
+            "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      - name: Locate project
+      - name: Locate project files
         shell: bash
         run: |
           if [ -f "$GITHUB_WORKSPACE/package.json" ]; then
@@ -60,6 +78,7 @@ jobs:
               exit 1
             fi
 
+            echo "Extracting project archive..."
             unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/diwan-project"
 
             PACKAGE_FILE=$(find "$RUNNER_TEMP/diwan-project" \
@@ -74,6 +93,7 @@ jobs:
           fi
 
           echo "PROJECT_DIR=$PROJECT_ROOT" >> "$GITHUB_ENV"
+          echo "Project directory: $PROJECT_ROOT"
 
       - name: Verify project files
         working-directory: ${{ env.PROJECT_DIR }}
@@ -94,7 +114,7 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: npx expo prebuild --platform android --non-interactive
 
-      - name: Build APK
+      - name: Build Android APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           cd android
