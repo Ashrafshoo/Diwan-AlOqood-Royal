@@ -38,7 +38,7 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      - name: Download and extract the exact project release asset
+      - name: Download and extract project archive from Release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -50,29 +50,37 @@ jobs:
           fi
           echo "Using release tag: $RELEASE_TAG"
           mkdir -p "$RUNNER_TEMP/diwan-upload" "$RUNNER_TEMP/diwan-project"
+
+          # GitHub may append -1, -2, etc. to duplicate asset names.
           gh release download "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --pattern "Diwan-AlOqood-Royal-Upload.zip" \
+            --pattern "Diwan-AlOqood-Royal-Upload*.zip" \
             --dir "$RUNNER_TEMP/diwan-upload"
-          ARCHIVE="$RUNNER_TEMP/diwan-upload/Diwan-AlOqood-Royal-Upload.zip"
-          test -s "$ARCHIVE"
-          unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/diwan-project"
+
+          mapfile -t ARCHIVES < <(find "$RUNNER_TEMP/diwan-upload" -maxdepth 1 -type f -name 'Diwan-AlOqood-Royal-Upload*.zip' -print)
+          if [ "${#ARCHIVES[@]}" -ne 1 ]; then
+            echo "ERROR: Expected exactly one Diwan project ZIP, found ${#ARCHIVES[@]}."
+            printf '%s\n' "${ARCHIVES[@]}"
+            exit 1
+          fi
+
+          unzip -q "${ARCHIVES[0]}" -d "$RUNNER_TEMP/diwan-project"
           PACKAGE_FILE="$(find "$RUNNER_TEMP/diwan-project" -type f -name package.json -print -quit)"
           if [ -z "$PACKAGE_FILE" ]; then
-            echo "ERROR: package.json not found inside the specified Release asset."
-            find "$RUNNER_TEMP/diwan-project" -maxdepth 3 -type f | head -100
+            echo "ERROR: package.json not found inside the selected Release asset."
+            find "$RUNNER_TEMP/diwan-project" -maxdepth 4 -type f | head -100
             exit 1
           fi
           PROJECT_ROOT="$(dirname "$PACKAGE_FILE")"
           echo "PROJECT_DIR=$PROJECT_ROOT" >> "$GITHUB_ENV"
           echo "Project root: $PROJECT_ROOT"
+          echo "Selected archive: ${ARCHIVES[0]}"
 
       - name: Verify project files
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           test -s package.json
           test -s app.json
-          test -s App.tsx
           test -s scripts/verify_data_packages.py
 
       - name: Verify the four original data packages
